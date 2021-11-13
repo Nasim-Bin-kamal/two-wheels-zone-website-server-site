@@ -3,12 +3,23 @@ const cors = require('cors');
 require('dotenv').config();
 const { MongoClient } = require('mongodb');
 const ObjectId = require('mongodb').ObjectId;
+const admin = require("firebase-admin");
 
 const app = express();
 
 //middleware
 app.use(cors());
 app.use(express.json());
+
+
+
+//initialize firebase
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
 
 const port = process.env.PORT || 5000;
 
@@ -19,6 +30,24 @@ const client = new MongoClient(uri, {
     useUnifiedTopology: true,
 });
 
+
+//token authorization function
+async function verifyToken(req, res, next) {
+    if (req.headers?.authorization?.startsWith('Bearer ')) {
+        const token = req.headers?.authorization?.split(' ')[1];
+
+        try {
+            const decodedUser = await admin.auth().verifyIdToken(token);
+            req.decodedEmail = decodedUser.email;
+        }
+        catch {
+
+        }
+    }
+
+    next();
+}
+
 async function run() {
     try {
         await client.connect();
@@ -26,6 +55,7 @@ async function run() {
         const productsCollection = database.collection('products');
         const usersCollection = database.collection('users');
         const ordersCollection = database.collection('orders');
+        const reviewsCollection = database.collection('reviews');
 
 
         //GET API for all products
@@ -58,13 +88,33 @@ async function run() {
             res.json(result);
         });
 
+        //PUT API for save user in db with google and github
+        app.put('/users', async (req, res) => {
+            const user = req.body;
+            const filter = { email: user.email };
+            const options = { upsert: true };
+            const updatedDoc = { $set: user };
+            const result = await usersCollection.updateOne(filter, updatedDoc, options);
+            res.json(result);
+
+        });
+
         //GET API for user order
         app.get('/orders', async (req, res) => {
             const email = req.query.email;
-            const query = { email: email };
-            const cursor = ordersCollection.find(query);
-            const orders = await cursor.toArray();
+            let orders;
+            if (email) {
+                const query = { email: email };
+                const cursor = ordersCollection.find(query);
+                orders = await cursor.toArray();
+
+            }
+            else {
+                const cursor = ordersCollection.find({});
+                orders = await cursor.toArray();
+            }
             res.json(orders);
+
         });
 
         //POST API for ordered products
@@ -90,6 +140,49 @@ async function run() {
             const result = await productsCollection.deleteOne(query);
             res.json(result);
         });
+
+        //POST API for reviews
+        app.post('/reviews', async (req, res) => {
+            const review = req.body;
+            const result = await reviewsCollection.insertOne(review);
+            res.json(result);
+        });
+
+        //GET API for reviews
+        app.get('/reviews', async (req, res) => {
+            const cursor = reviewsCollection.find({});
+            const reviews = await cursor.toArray();
+            res.json(reviews);
+        });
+
+
+        //PUT API for admin
+        app.put('/users/admin', verifyToken, async (req, res) => {
+            const user = req.body;
+            const filter = { email: user.email };
+            const requester = req?.decodedEmail;
+            if (requester) {
+                const requesterAccount = await usersCollection.findOne({ email: requester });
+                if (requesterAccount.role === "admin") {
+                    const updatedDoc = {
+                        $set: {
+                            role: 'admin'
+                        }
+                    };
+                    const result = await usersCollection.updateOne(filter, updatedDoc);
+                    console.log(result);
+                    res.json(result);
+                }
+            }
+            else {
+                res.status(403).json({ message: 'You do not have permission to make admin' });
+            }
+
+        });
+
+
+
+
 
 
 
