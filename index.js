@@ -88,16 +88,7 @@ async function run() {
             res.json(result);
         });
 
-        //PUT API for save user in db with google and github
-        app.put('/users', async (req, res) => {
-            const user = req.body;
-            const filter = { email: user.email };
-            const options = { upsert: true };
-            const updatedDoc = { $set: user };
-            const result = await usersCollection.updateOne(filter, updatedDoc, options);
-            res.json(result);
 
-        });
 
         //GET API for user order
         app.get('/orders', async (req, res) => {
@@ -155,12 +146,55 @@ async function run() {
             res.json(reviews);
         });
 
+        //UPDATE API for update status
+        app.put('/orders/update/:id', async (req, res) => {
+            const id = req.params.id;
+            // console.log(id)
+            const updatedStatus = req.body.orderStatus;
+
+            const filter = { _id: ObjectId(id) };
+            const options = { upsert: true };
+            const updateDoc = {
+                $set: {
+                    orderStatus: updatedStatus
+                },
+            };
+            const result = await ordersCollection.updateOne(filter, updateDoc, options);
+            res.json(result);
+
+        });
+
+        //GET API for single user
+        app.get('/users/:email', async (req, res) => {
+            const email = req.params.email;
+            const query = { email: email };
+            const user = await usersCollection.findOne(query);
+            let isAdmin = false;
+            if (user?.role === 'admin') {
+                isAdmin = true;
+            }
+            res.json({ admin: isAdmin });
+        });
+
+
+        //PUT API for save user in db with google and github
+        app.put('/users', async (req, res) => {
+            const user = req.body;
+            const filter = { email: user.email };
+            const options = { upsert: true };
+            const updatedDoc = { $set: user };
+            const result = await usersCollection.updateOne(filter, updatedDoc, options);
+            res.json(result);
+
+        });
 
         //PUT API for admin
         app.put('/users/admin', verifyToken, async (req, res) => {
             const user = req.body;
             const filter = { email: user.email };
-            const requester = req?.decodedEmail;
+            const requester = req.decodedEmail;
+            console.log(user);
+            console.log(requester)
             if (requester) {
                 const requesterAccount = await usersCollection.findOne({ email: requester });
                 if (requesterAccount.role === "admin") {
@@ -179,22 +213,6 @@ async function run() {
             }
 
         });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
